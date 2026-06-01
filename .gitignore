@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 results.csv
+results.png
 demo_export.csv
-*.png
-*.svg
+*.egg-info/
+dist/
+build/
+.Python
