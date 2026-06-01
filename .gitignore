@@ -7,3 +7,5 @@ demo_export.csv
 dist/
 build/
 .Python
+
+.github/
