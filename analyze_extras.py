@@ -486,47 +486,43 @@ def detect_outliers(values_dict, iqr_factor=1.5, z_threshold=3.0):
 
 def enrich_analysis(result):
     """Add statistical significance, error attribution, and outlier
-    detection to an existing analyze_csv() result dict (mutates in place
-    and returns the enriched dict).
+    detection to an existing result dict that has raw group values.
+    Works with generate_group_comparison from verify_results.py.
+    Mutates in place and returns the enriched dict.
     """
     groups = result.get("groups", {})
-    series_data = {}
-    
-    # Rebuild series from raw data if available
-    # (the result dict only has stats, not raw values)
-    # We need to read values from the original groups
-    raw_values = {}
-    for name in groups:
-        raw_values[name] = []
-    
-    # We need full timeseries for the attribution — read from CSV if available
-    # For now, use what we have
-    
     group_names = list(groups.keys())
-    
-    # Statistical tests (require at least 2 groups)
+
     if len(group_names) >= 2:
-        # Use 'last' values for comparison (or all available data points)
-        # For proper testing we need individual observations
-        # Since our CSV is wide-format with one observation per timepoint,
-        # we use all daily values as the sample
-        
-        ctrl_name = group_names[0]
-        treat_name = group_names[-1]
-        
-        # Try to find control/treatment by name
-        for n in group_names:
-            if "control" in n.lower() or "ctrl" in n.lower():
-                ctrl_name = n
-            if "treatment" in n.lower() or "treat" in n.lower():
-                treat_name = n
-        
-        # We need to get the actual values — they were stored in result['groups'] as stats
-        # but the raw list is not retained. Let's be pragmatic and store what we can.
-        pass
-    
-    result["statistical_significance"] = None
-    result["error_attribution"] = None
-    result["outliers"] = None
-    
+        ctrl_name = next((n for n in group_names if "control" in n.lower() or "ctrl" in n.lower()), group_names[0])
+        treat_name = next((n for n in group_names if "treatment" in n.lower() or "treat" in n.lower()), group_names[-1])
+
+        ctrl_vals = groups[ctrl_name]
+        treat_vals = groups[treat_name]
+
+        if isinstance(ctrl_vals, list) and ctrl_vals and isinstance(ctrl_vals[0], (int, float)):
+            wt = welch_t_test(ctrl_vals, treat_vals)
+            mw = mann_whitney_u(ctrl_vals, treat_vals)
+            cd = cohens_d(ctrl_vals, treat_vals)
+            result["statistical_significance"] = {
+                "welch_t": {"t_statistic": round(wt["t_statistic"], 4), "p_value": round(wt["p_value"], 4)},
+                "mann_whitney_u": {"u_statistic": mw["U_statistic"], "p_value": round(mw["p_value"], 4)},
+                "cohens_d": cd,
+                "interpretation": "significant" if wt["p_value"] < 0.05 else "not significant"
+            }
+            ts = result.get("timeseries", {})
+            ctrl_series = ts.get(ctrl_name, [(i, v) for i, v in enumerate(ctrl_vals)])
+            treat_series = ts.get(treat_name, [(i, v) for i, v in enumerate(treat_vals)])
+            attr = error_attribution(ctrl_series, treat_series)
+            result["error_attribution"] = {
+                "baseline_bias_pct": round(attr.get("baseline_bias", 0), 2),
+                "within_group_noise_pct": round(attr.get("within_group_noise", 0), 2),
+                "trend_divergence_pct": round(attr.get("trend_divergence", 0), 2)
+            }
+            result["outliers"] = detect_outliers({ctrl_name: ctrl_vals, treat_name: treat_vals})
+        else:
+            result["statistical_significance"] = result["error_attribution"] = result["outliers"] = None
+    else:
+        result["statistical_significance"] = result["error_attribution"] = result["outliers"] = None
+
     return result
