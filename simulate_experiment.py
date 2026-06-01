@@ -20,12 +20,12 @@ def simulate_growth(days, initial_height, daily_gain_mean, noise_std, seed):
     return heights
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--days', type=int, default=14, help='Total observation days')
     parser.add_argument('--output', default='results.csv', help='Output CSV path')
     parser.add_argument('--seed', type=int, default=42, help='Fixed random seed for reproducibility')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     days = args.days
     day_range = list(range(days))
