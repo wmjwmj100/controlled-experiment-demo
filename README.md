@@ -16,8 +16,8 @@ python3 plot_results.py results.csv
 # Verify expected outcomes
 python3 verify_results.py
 
-# Analyze differences
-python3 analyze.py --csv results.csv
+# Analyze differences with statistical tests
+python3 analyze.py results.csv
 ```
 
 ## Default Results (seed=42, 14 days)
@@ -35,8 +35,9 @@ python3 analyze.py --csv results.csv
 | simulate_experiment.py | Run the controlled experiment simulation |
 | experiment.py | Real data recording and analysis tool |
 | plot_results.py | Visualize results as chart or table |
-| verify_results.py | Assert results match expected values |
-| analyze.py | Statistical difference analysis between groups |
+| verify_results.py | Assert results match expected values and generate standardized group comparison |
+| analyze.py | Full diagnostic report: group statistics, Welch t-test, Mann-Whitney U, Cohen's d effect size, data quality checks, divergence classification |
+| analyze_extras.py | Statistical significance, three-source error attribution (baseline bias / within-group noise / trend separation), and IQR+z-score outlier detection |
 | LICENSE | MIT License |
 
 ## Design Principles
