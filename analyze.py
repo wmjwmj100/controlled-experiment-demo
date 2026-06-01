@@ -18,6 +18,9 @@ import math
 import sys
 from pathlib import Path
 
+from analyze_extras import welch_t_test, mann_whitney_u, cohens_d
+from analyze_extras import error_attribution, detect_outliers
+
 
 def load_csv(path):
     """Return (headers, rows) where rows is a list of dicts."""
@@ -336,7 +339,7 @@ def classify_divergence(stats_dict, series_dict):
 def analyze_csv(path):
     """Analyze experiment CSV and return structured results.
 
-    Returns a dict with keys: path, row_count, groups, comparison, quality, divergence
+    Returns a dict with keys: path, row_count, groups, comparison, quality, divergence,    statistical_significance, error_attribution, outliers
     """
     headers, rows = load_csv(path)
     groups = find_groups(rows)
@@ -349,6 +352,9 @@ def analyze_csv(path):
         "comparison": None,
         "quality": {},
         "divergence": {},
+        "statistical_significance": None,
+        "error_attribution": None,
+        "outliers": None,
     }
 
     for name, values in groups.items():
@@ -408,6 +414,57 @@ def analyze_csv(path):
     # --- Divergence classification ---
     if len(group_names) >= 2:
         result["divergence"] = classify_divergence(result["groups"], series)
+
+    # --- Statistical significance tests ---
+    if len(group_names) >= 2:
+        ctrl_name = group_names[0]
+        treat_name = group_names[-1]
+        for n in group_names:
+            if "control" in n.lower() or "ctrl" in n.lower():
+                ctrl_name = n
+            if "treatment" in n.lower() or "treat" in n.lower():
+                treat_name = n
+
+        ctrl_vals = groups.get(ctrl_name, [])
+        treat_vals = groups.get(treat_name, [])
+
+        if ctrl_vals and treat_vals:
+            sig = {}
+            sig["welch_t"] = welch_t_test(ctrl_vals, treat_vals)
+            sig["mann_whitney"] = mann_whitney_u(ctrl_vals, treat_vals)
+            sig["cohens_d"] = cohens_d(ctrl_vals, treat_vals)
+            result["statistical_significance"] = sig
+
+    # --- Error attribution ---
+    if len(group_names) >= 2:
+        # Match raw column names from series (e.g. "control_height_cm")
+        # to cleaned group names (e.g. "Control")
+        ctrl_col = None
+        treat_col = None
+        series_keys = list(series.keys())
+        for n in group_names:
+            pattern = n.lower().replace(" ", "_")
+            for sk in series_keys:
+                if pattern in sk.lower():
+                    if "control" in sk.lower() or "ctrl" in sk.lower():
+                        ctrl_col = sk
+                    if "treatment" in sk.lower() or "treat" in sk.lower():
+                        treat_col = sk
+
+        # Fallback: use first two series keys
+        if ctrl_col is None and len(series_keys) >= 1:
+            ctrl_col = series_keys[0]
+        if treat_col is None and len(series_keys) >= 2:
+            treat_col = series_keys[1]
+
+        ctrl_ser = series.get(ctrl_col, [])
+        treat_ser = series.get(treat_col, [])
+        if ctrl_ser and treat_ser:
+            result["error_attribution"] = error_attribution(ctrl_ser, treat_ser)
+
+    # --- Outlier detection ---
+    if groups:
+        result["outliers"] = detect_outliers(groups)
 
     return result
 
@@ -493,6 +550,102 @@ def format_divergence_report(divergence):
             lines.append(flag_meanings[f])
 
     return lines
+def generate_troubleshooting(result):
+    """Generate dynamic troubleshooting recommendations based on actual findings.
+
+    Returns a list of recommendation lines, ordered by severity/priority.
+    """
+    recs = []
+    quality = result.get("quality", {})
+    divergence = result.get("divergence", {})
+    flags = divergence.get("flags", []) if divergence else []
+    details = divergence.get("details", {}) if divergence else {}
+
+    # --- Data quality based recommendations ---
+    if quality.get("missing_values"):
+        n_missing = len(quality["missing_values"])
+        recs.append((1, f"Missing values ({n_missing} cells) — check if data collection was incomplete or some measurements were dropped."))
+
+    mono_issues = quality.get("monotonicity_issues", {})
+    if mono_issues:
+        for name, drops in mono_issues.items():
+            for d in drops[:2]:
+                recs.append((1, f"{name} dropped on day {d['day']} by {d['drop']:.3f} — possible measurement error or reset event. Check raw logs."))
+
+    jumps = quality.get("abnormal_jumps", {})
+    if jumps:
+        for name, jlist in jumps.items():
+            for j in jlist:
+                if j["severity"] == "major":
+                    recs.append((1, f"{name} had a major abnormal change on day {j['day']} ({j['change']:+.3f}) — investigate external disturbance."))
+
+    start_issues = quality.get("start_value_issues", [])
+    if start_issues:
+        for ref, name, ref_v, v, pct in start_issues:
+            recs.append((1, f"Starting values differ: {name}={v:.3f} vs {ref}={ref_v:.3f} ({pct:+.1f}%) — randomization may not have worked."))
+
+    # --- Divergence flag based recommendations ---
+    flag_recs = {
+        "weak_signal": (
+            2,
+            "Effect size is small relative to noise. Try: (a) increase sample size, "
+            "(b) extend experiment duration, (c) reduce measurement noise."
+        ),
+        "treatment_variance_much_higher": (
+            2,
+            "Treatment group variance is much higher than control. Check for: "
+            "(a) outliers in treatment group, (b) uncontrolled variable affecting treatment unevenly, "
+            "(c) measurement instrument drift."
+        ),
+        "treatment_variance_higher": (
+            3,
+            "Treatment group variance is moderately higher. Check for outliers or inconsistent application of treatment."
+        ),
+        "late_divergence": (
+            2,
+            "Divergence appears late. Review experimental log for mid-experiment changes: "
+            "(a) environment shift, (b) treatment application changed, (c) sample composition changed."
+        ),
+        "late_acceleration": (
+            2,
+            "Treatment accelerated in later phase. This could indicate a cumulative or threshold effect. "
+            "Extend the experiment to see if the trend stabilizes or continues."
+        ),
+        "irregular_divergence": (
+            3,
+            "No clear divergence pattern. Consider: (a) longer observation period, "
+            "(b) reducing measurement noise, (c) blocking known sources of variation."
+        ),
+        "treatment_growth_unstable": (
+            2,
+            "Treatment group daily growth is erratic. Check measurement consistency and whether the treatment "
+            "was applied uniformly across all units."
+        ),
+    }
+    for f in flags:
+        if f in flag_recs:
+            recs.append(flag_recs[f])
+
+    # --- SNR based recommendation ---
+    snr = details.get("snr", None)
+    if snr is not None and snr < 1.0:
+        recs.append((2, f"Signal-to-noise ratio is very low ({snr}). The observed difference may not be reproducible. "
+                    "Consider running a power analysis to determine required sample size."))
+
+    # --- General recommendations if nothing specific was flagged ---
+    if not recs:
+        recs.append((4, "No specific issues detected. If results still seem unexpected:"))
+        recs.append((4, "  1. Verify the measurement units and data format."))
+        recs.append((4, "  2. Run the experiment again with a different random seed."))
+        recs.append((4, "  3. Check if the treatment effect is practically significant, not just statistically."))
+        recs.append((4, "  4. Consider whether the control condition is truly appropriate for comparison."))
+    else:
+        recs.append((4, "After addressing the above, re-run and compare results."))
+
+    # Sort by priority (lower number = higher priority) then return just the text
+    recs.sort(key=lambda x: x[0])
+    return [f"  [{'*' * r[0]}] {r[1]}" for r in recs]
+
 
 
 def format_report(result):
@@ -542,15 +695,64 @@ def format_report(result):
         lines.extend(d_lines)
         lines.append("")
 
+    # --- Statistical significance section ---
+    sig = result.get("statistical_significance")
+    if sig:
+        lines.append("-" * 55)
+        lines.append("  Statistical Significance")
+        lines.append("-" * 55)
+        wt = sig.get("welch_t")
+        if wt:
+            p = wt["p_value"]
+            label = "significant" if wt["significant_005"] else "not significant"
+            lines.append(f"  Welch t-test: t={wt['t_statistic']}, df={wt['degrees_of_freedom']}, p={p} ({label})")
+        mw = sig.get("mann_whitney")
+        if mw:
+            p = mw["p_value"]
+            label = "significant" if mw["significant_005"] else "not significant"
+            lines.append(f"  Mann-Whitney U: U={mw['U_statistic']}, z={mw['z_score']}, p={p} ({label})")
+        cd = sig.get("cohens_d")
+        if cd:
+            lines.append(f"  Cohen's d: {cd['d']} ({cd['interpretation']} effect)")
+        lines.append("")
+
+    # --- Error attribution section ---
+    attr = result.get("error_attribution")
+    if attr:
+        lines.append("-" * 55)
+        lines.append("  Error Attribution (three-source decomposition)")
+        lines.append("-" * 55)
+        lines.append(f"  Total observed difference: {attr['total_observed_diff']:+.4f}")
+        lines.append(f"  Baseline bias:  {attr['baseline_bias']:+.4f}  ({attr['attribution_pct']['baseline_bias']}%)")
+        lines.append(f"  Within noise:   {attr['within_noise']:.4f}  ({attr['attribution_pct']['within_noise']}%)")
+        lines.append(f"  Trend divergence: {attr['trend_divergence']:+.4f}  ({attr['attribution_pct']['trend_divergence']}%)")
+        lines.append(f"  Dominant source: {attr['dominant_source']}")
+        lines.append("")
+
+    # --- Outlier detection section ---
+    ol = result.get("outliers")
+    if ol:
+        lines.append("-" * 55)
+        lines.append("  Outlier / Anomaly Detection")
+        lines.append("-" * 55)
+        if ol["total_outliers"] == 0:
+            lines.append("  No outliers detected.")
+        else:
+            for o in ol["iqr_outliers"]:
+                lines.append(f"  [!] IQR outlier: {o['group']} value {o['value']} (fence: [{o['lower_fence']}, {o['upper_fence']}])")
+            for o in ol["zscore_outliers"]:
+                lines.append(f"  [!] Z-score outlier: {o['group']} value {o['value']} (z={o['z_score']})")
+            for grp, info in ol["summary"].items():
+                if info["iqr_outliers"] or info["zscore_outliers"]:
+                    lines.append(f"  {grp}: {info['iqr_outliers']} IQR + {info['zscore_outliers']} z-score outliers")
+        lines.append("")
+
     # Troubleshooting guide
     lines.append("-" * 55)
-    lines.append("  Troubleshooting Guide")
+    lines.append("  Troubleshooting Recommendations")
     lines.append("-" * 55)
-    lines.append("  If results don't match expectations, check in this order:")
-    lines.append("    1. Data quality: Are there anomalies in the raw measurements?")
-    lines.append("    2. Divergence pattern: Does the difference look real or random?")
-    lines.append("    3. Design: Could an uncontrolled variable explain the pattern?")
-    lines.append("    4. Reproduce: Run with a different seed to check stability")
+    t_lines = generate_troubleshooting(result)
+    lines.extend(t_lines)
     lines.append("")
 
     lines.append("=" * 55)
