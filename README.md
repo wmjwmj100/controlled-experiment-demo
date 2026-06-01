@@ -6,34 +6,54 @@ This project demonstrates the core principles of scientific controlled experimen
 
 ## Quick Start
 
+```bash
+# Run the experiment simulation
+python3 simulate_experiment.py
 
+# View the results
+python3 plot_results.py results.csv
+
+# Verify expected outcomes
+python3 verify_results.py
+
+# Analyze differences
+python3 analyze.py --csv results.csv
+```
 
 ## Default Results (seed=42, 14 days)
 
 | Metric | Control (2-day) | Treatment (daily) | Difference |
 |--------|----------------|-------------------|------------|
-| Final height | 12.57 cm | 14.96 cm | +2.39 cm (+19%%) |
+| Final height | 12.57 cm | 14.96 cm | +2.39 cm (+19%) |
+
+![Experiment Results](results.png)
 
 ## Project Files
 
-- simulate_experiment.py - Run the controlled experiment simulation
-- experiment.py - Real data recording and analysis tool
-- plot_results.py - Visualize results as chart or table
-- verify_results.py - Assert results match expected values
-- analyze.py - Statistical difference analysis between groups
-- LICENSE - MIT License
+| File | Purpose |
+|------|---------|
+| simulate_experiment.py | Run the controlled experiment simulation |
+| experiment.py | Real data recording and analysis tool |
+| plot_results.py | Visualize results as chart or table |
+| verify_results.py | Assert results match expected values |
+| analyze.py | Statistical difference analysis between groups |
+| LICENSE | MIT License |
 
 ## Design Principles
 
-1. Zero dependencies - pure Python standard library only
-2. Reproducible - fixed random seed
-3. Verifiable - built-in assertions
-4. Minimal - each file does one thing
+1. **Zero dependencies** - Pure Python standard library only
+2. **Reproducible** - Fixed random seed guarantees identical results
+3. **Verifiable** - Built-in assertions confirm expected outcomes
+4. **Minimal** - Each file does one thing clearly
+
+## Why This Matters
+
+Controlled experiments are the foundation of scientific reasoning. This template helps you learn experimental design through runnable code, quickly prototype hypotheses, and generate reproducible data for teaching or demos.
 
 ## License
 
-MIT - see LICENSE.
+MIT - see [LICENSE](LICENSE).
 
 ---
 
-Also available in Chinese (README.zh.md).
+Also available in [中文](README.zh.md).

@@ -1,89 +1,88 @@
 #!/usr/bin/env python3
-"""experiment.py - 对照实验数据记录与分析工具
+"""experiment.py - Record and analyze real experiment observations.
 
-这是一个用于记录和分析真实实验数据的工具。
-与 simulate 类脚本不同，它假设你已经有了观测数据，
-负责录入、汇总、对比分析和导出。
-"""
+Use this when you have real (non-simulated) observation data.
+It provides group management, daily recording, summary reports,
+and CSV export - zero external dependencies."""
 
 import csv
 from datetime import datetime
 
 
 class Experiment:
-    """对照实验记录类"""
+    """A controlled experiment data recorder."""
 
-    def __init__(self, name: str, description: str = ""):
+    def __init__(self, name, description=''):
         self.name = name
         self.description = description
         self.created_at = datetime.now()
         self.groups = {}
 
-    def add_group(self, name: str, condition: str):
+    def add_group(self, name, condition):
         if name not in self.groups:
             self.groups[name] = []
-            print(f"[组] 添加组 '{name}': {condition}")
+            print(f"[group] added '{name}': {condition}")
             return True
-        print(f"[警告] 组 '{name}' 已存在")
+        print(f"[warn] group '{name}' already exists")
         return False
 
-    def record(self, group: str, day: int, value: float, note: str = ""):
+    def record(self, group, day, value, note=''):
         if group not in self.groups:
-            print(f"[错误] 组 '{group}' 不存在，请先调用 add_group")
+            print(f"[error] group '{group}' does not exist, call add_group() first")
             return False
-        rec = {"day": day, "value": value, "note": note,
-               "ts": datetime.now().isoformat()}
+        rec = {'day': day, 'value': value, 'note': note,
+               'ts': datetime.now().isoformat()}
         self.groups[group].append(rec)
-        print(f"[记录] 第{day}天 | {group}: {value} {note}")
+        print(f"[record] day {day} | {group}: {value} {note}")
         return True
 
-    def summary(self) -> str:
+    def summary(self):
         NL = chr(10)
-        lines = [f"实验名称: {self.name}"]
+        lines = [f"Experiment: {self.name}"]
         if self.description:
-            lines.append(f"描述: {self.description}")
-        lines.append(f"组数: {len(self.groups)}")
-        lines.append("")
+            lines.append(f"Description: {self.description}")
+        lines.append(f"Groups: {len(self.groups)}")
+        lines.append('')
         for gname, records in self.groups.items():
             lines.append(f"--- {gname} ---")
             if not records:
-                lines.append("  (无数据)")
+                lines.append('  (no data)')
                 continue
-            vals = [r["value"] for r in records]
-            days = [r["day"] for r in records]
-            lines.append(f"  记录数: {len(records)}")
-            lines.append(f"  天数: {min(days)} - {max(days)}")
-            lines.append(f"  最新值: {vals[-1]}")
+            vals = [r['value'] for r in records]
+            days = [r['day'] for r in records]
+            lines.append(f"  Records: {len(records)}")
+            lines.append(f"  Days: {min(days)} - {max(days)}")
+            lines.append(f"  Latest: {vals[-1]}")
             if len(vals) > 1:
-                lines.append(f"  总变化: {vals[-1] - vals[0]:+.2f}")
-            lines.append("")
+                lines.append(f"  Change: {vals[-1] - vals[0]:+.2f}")
+            lines.append('')
         return NL.join(lines)
 
-    def export_csv(self, path: str):
-        with open(path, "w", newline="") as f:
+    def export_csv(self, path):
+        with open(path, 'w', newline='') as f:
             w = csv.writer(f)
-            w.writerow(["组名", "天数", "观测值", "备注", "记录时间"])
+            w.writerow(['group', 'day', 'value', 'note', 'timestamp'])
             for gname, records in self.groups.items():
-                for r in sorted(records, key=lambda x: x["day"]):
-                    w.writerow([gname, r["day"], r["value"], r["note"], r["ts"]])
-        print(f"已导出: {path}")
+                for r in sorted(records, key=lambda x: x['day']):
+                    w.writerow([gname, r['day'], r['value'], r['note'], r['ts']])
+        print(f"Exported: {path}")
 
 
 def demo():
-    print("=" * 50)
-    print("experiment.py - 实验数据记录工具")
-    print("=" * 50)
-    exp = Experiment("浇水频率对照", "记录真实观测数据")
-    exp.add_group("对照组", "每2天浇水")
-    exp.add_group("实验组", "每天浇水")
-    exp.record("对照组", 1, 2.0, "种子出土")
-    exp.record("实验组", 1, 2.0, "种子出土")
-    exp.record("对照组", 7, 5.2, "真叶展开")
-    exp.record("实验组", 7, 6.8, "真叶展开")
+    print('=' * 50)
+    print('experiment.py - Experiment Data Recorder')
+    print('=' * 50)
+    exp = Experiment('Watering Frequency Trial', 'Recording real observations')
+    exp.add_group('Control', 'Water every 2 days')
+    exp.add_group('Treatment', 'Water every day')
+    exp.record('Control', 1, 2.0, 'seedling emerged')
+    exp.record('Treatment', 1, 2.0, 'seedling emerged')
+    exp.record('Control', 7, 5.2, 'true leaves')
+    exp.record('Treatment', 7, 6.8, 'true leaves')
     print()
     print(exp.summary())
-    exp.export_csv("demo_export.csv")
+    exp.export_csv('demo_export.csv')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     demo()
